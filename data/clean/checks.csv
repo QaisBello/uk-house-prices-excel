@@ -1,0 +1,9 @@
+check,result,status,proves
+Quarters in the calculation = rows in the raw file,290 of 290,PASS,No quarter dropped or duplicated.
+Sum of cash prices = sum in the raw file,0,PASS,The calculation reads every price unchanged.
+Largest gap between our year-on-year change and Nationwide's (pp),0.0719211822660007,PASS,Our change formula reproduces Nationwide's published figure to within rounding (0.1 percentage points).
+UK inflation years found once each in the raw CPI file,65 of 65,PASS,Every year from 1960 matches exactly one World Bank row for the UK.
+Price index in the base year = 100,100,PASS,Real prices are in base-year pounds.
+Real price = cash price in the base year,0,PASS,"Deflating is consistent: in the base year, nothing changes."
+Quarters with a real price,260,PASS,Every quarter from 1960 to 2024 has a real price; later quarters are left blank on purpose.
+Mortgage payment check,124913.202118845,PASS,"Total repaid over the term is more than the loan, so the PMT signs are right."

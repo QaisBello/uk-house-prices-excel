@@ -1,0 +1,23 @@
+name: check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc
+      - run: pip install -r requirements.txt
+      - name: Rebuild the workbook from the raw data
+        run: python tools/build_workbook.py
+      - name: Recalculate in LibreOffice and check against pandas
+        run: python tools/check_workbook.py
+      - name: Clean exports are up to date
+        run: git diff --stat -- data/clean

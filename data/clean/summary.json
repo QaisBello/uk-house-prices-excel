@@ -1,0 +1,48 @@
+{
+ "latest_price": 272751,
+ "latest_label": "Nationwide, 2025 Q2",
+ "cash_multiple": 120.512979122943,
+ "real_multiple": 4.98738205291262,
+ "real_growth_pa": 0.025425846652352,
+ "inflation_pa": 0.0505637477330969,
+ "worst_fall": -0.391663044725998,
+ "worst_trough": "trough 1996 Q1",
+ "falls": [
+  {
+   "episode": "1970s oil shock (1973-1979)",
+   "fall": -0.347172444188207,
+   "trough": "1977 Q1"
+  },
+  {
+   "episode": "Early-1990s crash (1989-1996)",
+   "fall": -0.391663044725998,
+   "trough": "1996 Q1"
+  },
+  {
+   "episode": "Financial crisis (2007-2013)",
+   "fall": -0.248821090262256,
+   "trough": "2013 Q1"
+  }
+ ],
+ "checks": "All 8 pass",
+ "formulas": 4842,
+ "base_year": 2024,
+ "mortgage": {
+  "quarter": [
+   "2007 Q3",
+   "2024 Q4"
+  ],
+  "price": [
+   184131,
+   268518
+  ],
+  "payment": [
+   968.770340396151,
+   1412.75653889076
+  ],
+  "payment_real": [
+   1544.93477353492,
+   1412.75653889076
+  ]
+ }
+}

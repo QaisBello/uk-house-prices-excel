@@ -1,0 +1,310 @@
+<title>UK House Prices</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+/* Layout: the answer first (cash vs real prices, falls from peak, decades), then a mortgage calculator that mirrors the
+   workbook sheet, then what is inside the workbook: sheet map, key formulas and the reconciliation checks. */
+:root{
+  --paper:#f5f6f4; --card:#fcfcfb; --ink:#13201b; --ink-2:#47554f; --muted:#7c8781; --rule:#e0e4e1; --axis:#c6ccc8;
+  --accent:#0f766e; --warn:#c2410c; --ctx:#b6beb9; --ok:#16845f; --band:rgba(15,118,110,.07);
+  --l-source:#8a8f8c; --l-seed:#a16207; --l-staging:#2f6fb0; --l-intermediate:#7c5cc4; --l-marts:#0f766e;
+  --sans:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --paper:#0f1412; --card:#161c1a; --ink:#e8eeeb; --ink-2:#b3beb9; --muted:#808b86; --rule:#26302c; --axis:#38443f;
+  --accent:#2bb3a6; --warn:#ec7a43; --ctx:#4a5550; --ok:#33b487; --band:rgba(43,179,166,.08);
+  --l-source:#8f9692; --l-seed:#d6a03a; --l-staging:#5d98d6; --l-intermediate:#a48ae6; --l-marts:#2bb3a6; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --paper:#0f1412; --card:#161c1a; --ink:#e8eeeb; --ink-2:#b3beb9; --muted:#808b86; --rule:#26302c; --axis:#38443f;
+  --accent:#2bb3a6; --warn:#ec7a43; --ctx:#4a5550; --ok:#33b487; --band:rgba(43,179,166,.08);
+  --l-source:#8f9692; --l-seed:#d6a03a; --l-staging:#5d98d6; --l-intermediate:#a48ae6; --l-marts:#2bb3a6; color-scheme:dark; }
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14.5px;line-height:1.55}
+.wrap{max-width:1240px;margin:0 auto;padding-inline:clamp(16px,3vw,32px);padding-block:28px 56px;display:flex;flex-direction:column;gap:18px}
+h1,h2,h3,p{margin:0}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.num{font-variant-numeric:tabular-nums}
+.head{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:24px 40px;align-items:end}
+.head h1{font-weight:800;font-size:clamp(42px,6.2vw,80px);line-height:.95;letter-spacing:-.035em;margin-top:12px}
+.head h1 span{color:var(--warn)}
+.lede{font-size:clamp(16px,1.5vw,19px);line-height:1.5;color:var(--ink-2);margin-top:16px;max-width:56ch}
+.lede b{color:var(--ink)}
+.src{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.src a{color:var(--ink)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.dot.live{background:var(--ok)}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:16px;padding:18px 20px}
+.stack{display:flex;flex-direction:column;gap:8px;font-size:13.5px;color:var(--ink-2)}
+.stack b{color:var(--ink)}
+.pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:99px;border:1px solid var(--rule);background:var(--paper);color:var(--ink-2)}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border:1px solid var(--rule);border-radius:16px;background:var(--card);overflow:hidden}
+.kpi{padding:14px 16px;border-right:1px solid var(--rule);min-width:0}
+.kpi:last-child{border-right:0}
+.kpi .k{font-size:12px;color:var(--ink-2);font-weight:600}
+.kpi .v{font-weight:800;font-size:clamp(24px,2.6vw,32px);line-height:1.1;margin-top:4px;letter-spacing:-.02em}
+.kpi .v small{font-size:.45em;font-weight:600;color:var(--muted);margin-left:3px;letter-spacing:0}
+.kpi .s{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:3px}
+.panel{background:var(--card);border:1px solid var(--rule);border-radius:16px;padding:20px 22px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.panel h2{font-weight:800;font-size:clamp(20px,2.1vw,25px);line-height:1.15;letter-spacing:-.02em}
+.sub{color:var(--ink-2);max-width:80ch}
+.sub b{color:var(--ink)}
+.grid2{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:18px}
+svg{display:block;width:100%}
+svg text{fill:var(--ink-2);font-family:var(--sans);font-size:11px}
+.axis text{fill:var(--muted);font-family:var(--mono);font-size:10px}
+.axis line,.axis path{stroke:var(--axis)}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:10px;overflow:hidden;background:var(--paper)}
+.seg button{all:unset;cursor:pointer;font-size:13px;padding:6px 12px;color:var(--ink-2);border-right:1px solid var(--rule)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper);font-weight:600}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note{font-size:13.5px;color:var(--ink-2);border-left:3px solid var(--warn);padding:8px 12px;background:color-mix(in srgb,var(--warn) 7%,var(--card));border-radius:0 10px 10px 0}
+.note b{color:var(--ink)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px}
+.tests{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.tests .card{padding:12px 14px}
+.tests .n{font-weight:800;font-size:26px;letter-spacing:-.02em}
+.tests .l{font-size:12px;color:var(--ink-2)}
+.tablewrap{max-height:420px;overflow:auto;border:1px solid var(--rule);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th{position:sticky;top:0;background:var(--card);font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:500;text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);white-space:nowrap}
+td{padding:6px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+td.tn{font-family:var(--mono);font-size:11.5px;word-break:break-all;max-width:420px}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.st{font-family:var(--mono);font-size:11px;padding:1px 7px;border-radius:99px;border:1px solid var(--rule)}
+.st.pass{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--rule))}
+.st.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--rule))}
+.btn{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px;border-radius:10px;padding:9px 14px;background:var(--ink);color:var(--paper);text-decoration:none;align-self:flex-start}
+.tip{position:fixed;pointer-events:none;opacity:0;background:var(--ink);color:var(--paper);font-size:12px;padding:8px 10px;border-radius:8px;max-width:300px;z-index:20;transition:opacity .1s;line-height:1.45}
+footer{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+footer a{color:var(--ink-2)}
+@media (max-width:900px){
+  .head,.grid2{grid-template-columns:1fr}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpi{border-bottom:1px solid var(--rule)}
+  .tests{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+.calc>*,.grid2>*,.flist>*{min-width:0}
+.calc{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:18px;align-items:start}
+.form{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px 12px;align-items:center;font-size:13.5px}
+.form .h{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:center}
+.form label{color:var(--ink-2)}
+.form select,.form input{font:inherit;font-size:13.5px;color:var(--ink);background:color-mix(in srgb,#ffd84d 16%,var(--card));border:1px solid var(--rule);border-radius:8px;padding:6px 8px;width:100%;min-width:0}
+.form .out{font-variant-numeric:tabular-nums;text-align:right;padding:6px 8px;border-bottom:1px solid var(--rule)}
+.form .out.b{font-weight:800;font-size:16px}
+.big{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.big .card .v{font-weight:800;font-size:26px;letter-spacing:-.02em}
+.big .card .k{font-size:12px;color:var(--ink-2)}
+.sheets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.sheets .card{padding:12px 14px;display:flex;flex-direction:column;gap:4px}
+.sheets .card b{font-family:var(--mono);font-size:12.5px}
+.sheets .card span{font-size:13px;color:var(--ink-2)}
+pre.f{margin:0;font-family:var(--mono);font-size:12px;line-height:1.55;background:var(--paper);border:1px solid var(--rule);border-radius:10px;padding:10px 12px;overflow-x:auto;white-space:pre}
+.flist{display:flex;flex-direction:column;gap:12px}
+.flist .t{font-size:13px;color:var(--ink-2);margin-bottom:4px}
+.flist .t b{color:var(--ink)}
+.st.fail{color:var(--warn)}
+@media (max-width:900px){.calc,.sheets{grid-template-columns:1fr}.big{grid-template-columns:1fr}}
+</style>
+<!--SITEBAR-->
+<div class="wrap">
+  <header class="head">
+    <div>
+      <div class="eyebrow">Data Analytics · Excel · UK house prices, 1953-2025</div>
+      <h1>120 times dearer,<br><span>or five?</span></h1>
+      <p class="lede" id="lede">Seventy years of Nationwide house prices in one Excel workbook, measured in cash and after inflation. Every number is a <b>live formula</b> over the raw data, and an independent pandas run checks the results.</p>
+      <div class="src" id="src"><span class="dot"></span>Loading…</div>
+    </div>
+    <aside class="card stack">
+      <div class="eyebrow">The workbook</div>
+      <div class="pills"><span class="pill">Excel</span><span class="pill">INDEX / MATCH</span><span class="pill">SUMIFS · AVERAGEIFS</span><span class="pill">MINIFS</span><span class="pill">PMT</span><span class="pill">Data validation</span><span class="pill">Conditional formatting</span><span class="pill">Named ranges</span></div>
+      <div>10 sheets, <b id="nform">4,800+</b> formulas and no pasted results. Choose a <b>base year</b> and every real price is restated in that year's pounds. Change a <b>mortgage rate</b> and the repayment and sensitivity grid update.</div>
+      <a class="btn" id="dl" href="https://github.com/QaisBello/uk-house-prices-excel/raw/main/UK_House_Prices.xlsx">Download the workbook (.xlsx)</a>
+    </aside>
+  </header>
+
+  <section class="kpis" id="kpis" aria-label="Headline figures"></section>
+
+  <section class="panel">
+    <div><h2 id="h-main">Cash prices rose 120-fold. After inflation, five-fold.</h2><p class="sub">Average Nationwide house price each year, in cash (grey) and restated in 2024 pounds (green). Real prices only start in 1960, the first year of the inflation data.</p></div>
+    <div class="seg" id="scale" role="group" aria-label="Scale"><button aria-pressed="true" data-s="lin">Linear scale</button><button aria-pressed="false" data-s="log">Log scale</button></div>
+    <svg id="main" height="340" role="img" aria-label="House prices in cash and real terms"></svg>
+    <div class="legend"><span><i style="background:var(--ctx)"></i>Cash price</span><span><i style="background:var(--accent)"></i>Real price (2024 £)</span></div>
+  </section>
+
+  <section class="grid2">
+    <div class="panel">
+      <div><h2>Three crashes, and a quiet fourth</h2><p class="sub">Real price against the highest real price reached before it. In the 1970s, cash prices never fell at all; inflation did the work. <b id="quiet"></b></p></div>
+      <svg id="falls" height="300" role="img" aria-label="Real fall from previous peak"></svg>
+    </div>
+    <div class="panel">
+      <div><h2>Decade by decade</h2><p class="sub">Growth from the first to the last year of each decade (the 2020s run to 2024). The gap between the bars is inflation.</p></div>
+      <svg id="decades" height="300" role="img" aria-label="Growth by decade"></svg>
+      <div class="legend"><span><i style="background:var(--ctx)"></i>Cash growth</span><span><i style="background:var(--accent)"></i>Real growth</span></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div><h2>What did the average house cost a month?</h2><p class="sub">The workbook's <b>Mortgage</b> sheet, working in the browser: a repayment mortgage on the average house in two quarters. The rates are <b>your assumptions</b>, not historical rates. Both start at 5% so the comparison isolates the price.</p></div>
+    <div class="calc">
+      <div class="form" id="form">
+        <span></span><span class="h">Then</span><span class="h">Now</span>
+        <label for="qa">Quarter</label><select id="qa"></select><select id="qb"></select>
+        <label for="ra">Mortgage rate</label><input id="ra" type="number" step="0.1" min="0.1" max="25" value="5"><input id="rb" type="number" step="0.1" min="0.1" max="25" value="5">
+        <label for="da">Deposit (%)</label><input id="da" type="number" step="1" min="0" max="95" value="10"><input id="db" type="number" step="1" min="0" max="95" value="10">
+        <label for="ta">Term (years)</label><input id="ta" type="number" step="1" min="5" max="40" value="25"><input id="tb" type="number" step="1" min="5" max="40" value="25">
+        <span>Average price</span><span class="out" id="pa"></span><span class="out" id="pb"></span>
+        <span>Monthly repayment</span><span class="out b" id="ma"></span><span class="out b" id="mb"></span>
+        <span>In 2024 pounds</span><span class="out" id="xa"></span><span class="out" id="xb"></span>
+        <span>Deposit, 2024 £</span><span class="out" id="ya"></span><span class="out" id="yb"></span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="big" id="big"></div>
+        <p class="note" id="mnote"></p>
+        <pre class="f">Monthly repayment  =PMT(C13, C9*12, -C12)
+In base-year £     =C14*100/INDEX(CPI_Index, MATCH(VALUE(LEFT(C6,4)), CPI_Year, 0))</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div><h2>Inside the workbook</h2><p class="sub">Raw data goes in untouched; calculation sheets read it with formulas; the dashboard reads the calculation sheets. Blue text in a yellow cell is an input. Every other number is a formula.</p></div>
+    <div class="sheets">
+      <div class="card"><b>Dashboard</b><span>Base-year picker, six headline figures, the three crashes (MINIFS), three charts, and a live pass/fail for the checks.</span></div>
+      <div class="card"><b>Mortgage</b><span>Then vs now with PMT, real repayments, and a rate x deposit sensitivity grid with a colour scale.</span></div>
+      <div class="card"><b>Annual · Decades</b><span>AVERAGEIFS over the quarters; compound growth per decade, cash and real, against inflation.</span></div>
+      <div class="card"><b>Quarterly</b><span>290 Nationwide quarters: real price, year-on-year change, running real peak and fall from peak.</span></div>
+      <div class="card"><b>CPI</b><span>World Bank UK inflation pulled with SUMIFS, chained into an index, rebased to the chosen year.</span></div>
+      <div class="card"><b>Checks · Raw</b><span>8 reconciliation tests; Nationwide and World Bank data exactly as published.</span></div>
+    </div>
+    <div class="grid2">
+      <div class="flist">
+        <div><div class="t"><b>Inflation for one year</b>, from the 16,000-row World Bank file</div><pre class="f">=SUMIFS(Raw_CPI!$D:$D, Raw_CPI!$B:$B, "GBR", Raw_CPI!$C:$C, A6)/100</pre></div>
+        <div><div class="t"><b>A chained price index</b>, rebased to the year picked on the Dashboard</div><pre class="f">=C5*(1+B6)
+=C6/INDEX($C$5:$C$70, MATCH(BaseYear, $A$5:$A$70, 0))*100</pre></div>
+        <div><div class="t"><b>Real price and fall from the peak so far</b></div><pre class="f">=IF(G5="", "", E5*100/G5)
+=IF(H5="", "", H5/MAX(H$5:H5)-1)</pre></div>
+        <div><div class="t"><b>The worst fall in an episode</b>, and when it bottomed out</div><pre class="f">=MINIFS(Q_Fall, Q_Year, "&gt;=1989", Q_Year, "&lt;=1996")
+=INDEX(Q_Label, MATCH(C18, Q_Fall, 0))</pre></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="t" style="font-size:13px;color:var(--ink-2)"><b style="color:var(--ink)">Checks sheet.</b> Each test compares the calculations with the raw data. Separately, <code>tools/check_workbook.py</code> recalculates the workbook in LibreOffice and checks every real price, fall and annual figure against pandas.</div>
+        <div class="tablewrap"><table id="checks"></table></div>
+      </div>
+    </div>
+    <p class="note"><b>A data quality catch.</b> The World Bank CPI file's metadata says it holds a price index with 2005 = 100. It holds annual inflation rates (UK 1975: 24.2). The workbook treats them as rates and chains its own index; read as an index, real prices would be nonsense.</p>
+  </section>
+
+  <footer>
+    <div><b>Data:</b> Nationwide Building Society, UK house prices since 1952 (quarterly average price), via <a href="https://github.com/datasets/house-prices-uk" target="_blank" rel="noopener">datasets/house-prices-uk</a>. World Bank consumer price inflation, United Kingdom, via <a href="https://github.com/datasets/cpi" target="_blank" rel="noopener">datasets/cpi</a>. Both ODC PDDL 1.0. Nationwide's method changed over time, so long-run comparisons are approximate. No earnings data, so this is not an affordability ratio.</div>
+    <div>Built by Qais Adeniji-Bello. <a href="https://github.com/QaisBello/uk-house-prices-excel" target="_blank" rel="noopener">Workbook, code and data on GitHub</a>.</div>
+  </footer>
+</div>
+<div class="tip" id="tip"></div>
+<script>
+const SOURCE={repo:"QaisBello/uk-house-prices-excel",branch:"main"};
+const FALLBACKS=/*FALLBACKS*/["../"];
+const RAWURL=f=>`https://raw.githubusercontent.com/${SOURCE.repo}/${SOURCE.branch}/${f}`;
+async function get(path){for(const [u,k] of [[RAWURL(path),"live"],...FALLBACKS.map(f=>[f+path,"snapshot"])]){try{const r=await fetch(u,{cache:"no-store"});if(!r.ok)throw 0;return {t:await r.text(),k};}catch(e){}}throw new Error(path);}
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const f0=d3.format(",.0f"), f1=d3.format(".1f"), pc=d3.format(".1%"), gbp=v=>"£"+f0(v), gbp2=v=>"£"+d3.format(",.2f")(v);
+const tip=document.getElementById("tip");
+function showTip(e,h){tip.innerHTML=h;tip.style.opacity=1;const r=tip.getBoundingClientRect();let x=e.clientX+14,y=e.clientY+14;if(x+r.width>innerWidth-8)x=e.clientX-r.width-14;if(y+r.height>innerHeight-8)y=e.clientY-r.height-14;tip.style.left=x+"px";tip.style.top=y+"px";}
+function hideTip(){tip.style.opacity=0;}
+function frame(id){const svg=d3.select("#"+id);svg.selectAll("*").remove();return {svg,W:svg.node().getBoundingClientRect().width,H:+svg.attr("height")};}
+const grid=g=>{g.select(".domain").remove();g.selectAll(".tick line").attr("stroke",css("--rule"));};
+let AN,DE,Q,S,CK,scale="lin";
+
+function kpis(){
+  const K=[["Average house, "+S.latest_label.replace("Nationwide, ",""),gbp(S.latest_price),"Nationwide"],
+    ["Cash price since 1960",f1(S.cash_multiple)+"<small>x</small>","1960 average to latest"],
+    ["Real price since 1960",f1(S.real_multiple)+"<small>x</small>","in 2024 pounds, 1960 to 2024"],
+    ["Real growth a year",f1(100*S.real_growth_pa)+"<small>%</small>",`above ${f1(100*S.inflation_pa)}% inflation`],
+    ["Biggest real fall",f1(100*S.worst_fall)+"<small>%</small>",S.worst_trough]];
+  document.getElementById("kpis").innerHTML=K.map(([k,v,s])=>`<div class="kpi"><div class="k">${k}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`).join("");
+}
+function main(){
+  const {svg,W,H}=frame("main"), mg={t:12,r:70,b:26,l:62};
+  const x=d3.scaleLinear().domain(d3.extent(AN,r=>r.year)).range([mg.l,W-mg.r]);
+  const y=(scale==="log"?d3.scaleLog().domain([1500,400000]):d3.scaleLinear().domain([0,d3.max(AN,r=>Math.max(r.price,r.real_price))*1.05])).range([H-mg.b,mg.t]);
+  svg.append("g").attr("class","axis").attr("transform",`translate(${mg.l},0)`).call(d3.axisLeft(y).ticks(scale==="log"?6:5,scale==="log"?"~s":undefined).tickFormat(v=>"£"+d3.format("~s")(v)).tickSize(-(W-mg.l-mg.r))).call(grid);
+  svg.append("g").attr("class","axis").attr("transform",`translate(0,${H-mg.b})`).call(d3.axisBottom(x).ticks(W<600?5:10).tickFormat(d3.format("d")).tickSize(3)).select(".domain").remove();
+  for(const [k,c,w] of [["price","--ctx",2],["real_price","--accent",2.6]]){
+    svg.append("path").datum(AN).attr("fill","none").attr("stroke",css(c)).attr("stroke-width",w).attr("d",d3.line().x(r=>x(r.year)).y(r=>y(r[k])));
+    const last=AN[AN.length-1];
+    svg.append("text").attr("x",x(last.year)+6).attr("y",y(last[k])).attr("dy",".35em").style("font-family","var(--mono)").style("font-size","10.5px").style("fill",css(c==="--ctx"?"--ink-2":"--accent")).text(gbp(last[k]));
+  }
+  const first=AN[0];
+  svg.append("text").attr("x",x(first.year)+4).attr("y",y(first.real_price)+16).style("font-size","10.5px").style("fill",css("--accent")).text(`1960: ${gbp(first.real_price)} in 2024 £`);
+  const line=svg.append("line").attr("stroke",css("--axis")).attr("y1",mg.t).attr("y2",H-mg.b).style("opacity",0);
+  svg.append("rect").attr("x",mg.l).attr("y",mg.t).attr("width",W-mg.l-mg.r).attr("height",H-mg.t-mg.b).attr("fill","transparent")
+    .on("mousemove",e=>{const yr=Math.round(x.invert(d3.pointer(e)[0])), r=AN.find(d=>d.year===yr);if(!r)return;line.attr("x1",x(yr)).attr("x2",x(yr)).style("opacity",1);
+      showTip(e,`<b>${yr}</b><br>Cash ${gbp(r.price)}<br>Real ${gbp(r.real_price)} (2024 £)<br>Inflation ${pc(r.inflation)}`);}).on("mouseleave",()=>{hideTip();line.style("opacity",0);});
+}
+function falls(){
+  const {svg,W,H}=frame("falls"), mg={t:24,r:12,b:26,l:44}, d=Q.filter(r=>r.real_fall!=null&&!isNaN(r.real_fall));
+  const p=d3.timeParse("%Y-%m-%d"); d.forEach(r=>r.t=p(r.date));
+  const x=d3.scaleTime().domain(d3.extent(d,r=>r.t)).range([mg.l,W-mg.r]), y=d3.scaleLinear().domain([d3.min(d,r=>r.real_fall)*1.12,0]).range([H-mg.b,mg.t]);
+  svg.append("g").attr("class","axis").attr("transform",`translate(${mg.l},0)`).call(d3.axisLeft(y).ticks(5).tickFormat(d3.format(".0%")).tickSize(-(W-mg.l-mg.r))).call(grid);
+  svg.append("g").attr("class","axis").attr("transform",`translate(0,${H-mg.b})`).call(d3.axisBottom(x).ticks(W<500?4:7).tickSize(3)).select(".domain").remove();
+  svg.append("path").datum(d).attr("fill",css("--warn")).attr("fill-opacity",.18).attr("stroke",css("--warn")).attr("stroke-width",1.6).attr("d",d3.area().x(r=>x(r.t)).y0(y(0)).y1(r=>y(r.real_fall)));
+  const marks=[...S.falls.map(f=>({lab:f.trough,v:f.fall,n:f.episode.split(" (")[0]})),{lab:Q.filter(r=>r.real_fall!=null&&!isNaN(r.real_fall)).slice(-1)[0].label,v:Q.filter(r=>r.real_fall!=null&&!isNaN(r.real_fall)).slice(-1)[0].real_fall,n:"Since 2021"}];
+  for(const m of marks){const r=d.find(q=>q.label===m.lab);if(!r)continue;
+    svg.append("circle").attr("cx",x(r.t)).attr("cy",y(m.v)).attr("r",3.5).attr("fill",css("--warn"));
+    svg.append("text").attr("x",x(r.t)).attr("y",y(m.v)+15).attr("text-anchor",x(r.t)>W-80?"end":"middle").style("font-size","10.5px").style("fill",css("--ink")).text(`${m.n}: ${f1(100*m.v)}%`);}
+  svg.append("rect").attr("x",mg.l).attr("y",mg.t).attr("width",W-mg.l-mg.r).attr("height",H-mg.t-mg.b).attr("fill","transparent")
+    .on("mousemove",e=>{const t=x.invert(d3.pointer(e)[0]), r=d.reduce((a,b)=>Math.abs(b.t-t)<Math.abs(a.t-t)?b:a);showTip(e,`<b>${r.label}</b><br>${f1(100*r.real_fall)}% below the real peak<br>Real ${gbp(r.real_price)} vs peak ${gbp(r.real_peak)}`);}).on("mouseleave",hideTip);
+}
+function decades(){
+  const {svg,W,H}=frame("decades"), mg={t:14,r:10,b:26,l:44};
+  const x=d3.scaleBand().domain(DE.map(r=>r.decade)).range([mg.l,W-mg.r]).padding(.22), xi=d3.scaleBand().domain(["growth","real_growth"]).range([0,x.bandwidth()]).padding(.08);
+  const y=d3.scaleLinear().domain([Math.min(0,d3.min(DE,r=>r.real_growth))*3,d3.max(DE,r=>r.growth)*1.08]).range([H-mg.b,mg.t]);
+  svg.append("g").attr("class","axis").attr("transform",`translate(${mg.l},0)`).call(d3.axisLeft(y).ticks(5).tickFormat(d3.format(".0%")).tickSize(-(W-mg.l-mg.r))).call(grid);
+  svg.append("g").attr("class","axis").attr("transform",`translate(0,${y(0)})`).call(d3.axisBottom(x).tickSize(0)).call(g=>g.selectAll("text").attr("transform",`translate(0,${H-mg.b-y(0)+4})`)).select(".domain").attr("stroke",css("--axis"));
+  for(const k of ["growth","real_growth"])
+    svg.selectAll("rect."+k).data(DE).join("rect").attr("x",r=>x(r.decade)+xi(k)).attr("width",xi.bandwidth()).attr("y",r=>y(Math.max(0,r[k]))).attr("height",r=>Math.abs(y(r[k])-y(0))).attr("rx",2)
+      .attr("fill",css(k==="growth"?"--ctx":"--accent")).on("mousemove",(e,r)=>showTip(e,`<b>${r.decade}</b> (${r.from}-${r.to})<br>Cash ${pc(r.growth)} (${pc(r.growth_pa)} a year)<br>Real ${pc(r.real_growth)} (${pc(r.real_growth_pa)} a year)<br>Inflation ${pc(r.inflation_pa)} a year`)).on("mouseleave",hideTip);
+  svg.selectAll("text.v").data(DE).join("text").attr("x",r=>x(r.decade)+xi("real_growth")+xi.bandwidth()/2).attr("y",r=>r.real_growth>=0?y(r.real_growth)-4:y(r.real_growth)+11).attr("text-anchor","middle").style("font-family","var(--mono)").style("font-size","9.5px").style("fill",css("--accent")).text(r=>d3.format("+.0%")(r.real_growth));
+}
+const PMT=(r,n,pv)=>r===0?pv/n:pv*r/(1-Math.pow(1+r,-n));
+function mortgage(){
+  const g=id=>document.getElementById(id), byLab=new Map(Q.map(r=>[r.label,r]));
+  const side=s=>{const r=byLab.get(g("q"+s).value), rate=+g("r"+s).value/100, dep=+g("d"+s).value/100, n=+g("t"+s).value*12;
+    const loan=r.price*(1-dep), m=PMT(rate/12,n,loan), idx=r.cpi_index;
+    return {r,m,real:idx?m*100/idx:null,depReal:idx?r.price*dep*100/idx:null};};
+  const A=side("a"),B=side("b");
+  for(const [s,o] of [["a",A],["b",B]]){g("p"+s).textContent=gbp(o.r.price);g("m"+s).textContent=gbp2(o.m);g("x"+s).textContent=o.real?gbp2(o.real):"no inflation data yet";g("y"+s).textContent=o.depReal?gbp(o.depReal):"–";}
+  const ch=(a,b)=>a&&b?d3.format("+.1%")(b/a-1):"–";
+  g("big").innerHTML=[["Repayment, cash",ch(A.m,B.m)],["Repayment, real",ch(A.real,B.real)],["Deposit, real",ch(A.depReal,B.depReal)]]
+    .map(([k,v])=>`<div class="card"><div class="v num">${v}</div><div class="k">${k}, then to now</div></div>`).join("");
+  g("mnote").innerHTML=A.real&&B.real?`At the same rate, the average house in <b>${A.r.label}</b> cost <b>${gbp2(A.real)}</b> a month in 2024 pounds; in <b>${B.r.label}</b>, <b>${gbp2(B.real)}</b>. Change the two rates to see how much borrowing costs move the answer.`:`Real repayments need inflation data for both quarters (it runs to 2024).`;
+}
+function checks(){
+  document.getElementById("checks").innerHTML=`<thead><tr><th>Check</th><th>Status</th></tr></thead><tbody>${CK.map(c=>`<tr><td>${c.check}</td><td><span class="st ${c.status==="PASS"?"pass":"fail"}">${c.status}</span></td></tr>`).join("")}</tbody>`;
+}
+function draw(){main();falls();decades();}
+async function init(){
+  const src=document.getElementById("src");
+  try{
+    const [a,b,c,d,e]=await Promise.all(["data/clean/annual.csv","data/clean/decades.csv","data/clean/quarterly.csv","data/clean/summary.json","data/clean/checks.csv"].map(get));
+    AN=d3.csvParse(a.t,d3.autoType);DE=d3.csvParse(b.t,d3.autoType);Q=d3.csvParse(c.t,r=>{const o=d3.autoType({...r,date:"",label:"",quarter:""});o.date=r.date;o.label=r.label;return o;});S=JSON.parse(d.t);CK=d3.csvParse(e.t);
+    src.innerHTML=`<span class="dot ${a.k==="live"?"live":""}"></span>${a.k==="live"?"Live from":"Snapshot of"} <a href="https://github.com/${SOURCE.repo}" target="_blank" rel="noopener">github.com/${SOURCE.repo}</a> · ${Q.length} quarters · checks: ${S.checks.toLowerCase()}`;
+  }catch(err){src.textContent="Could not load the data.";return;}
+  document.getElementById("nform").textContent=f0(S.formulas);
+  const last=Q.filter(r=>r.real_fall!=null&&!isNaN(r.real_fall)).slice(-1)[0], pk=Q.reduce((a,b)=>(b.real_price||0)>(a.real_price||0)?b:a);
+  document.getElementById("quiet").textContent=`Since the real peak in ${pk.label}, prices have fallen ${f1(-100*last.real_fall)}% after inflation by ${last.label}, while cash prices dipped at most 5.5%.`;
+  const opts=Q.filter(r=>r.year>=1960).map(r=>`<option>${r.label}</option>`).join("");
+  for(const [id,v] of [["qa",S.mortgage.quarter[0]],["qb",S.mortgage.quarter[1]]]){const s=document.getElementById(id);s.innerHTML=opts;s.value=v;}
+  document.querySelectorAll("#form select,#form input").forEach(el=>el.addEventListener("input",mortgage));
+  document.querySelectorAll("#scale button").forEach(b=>b.onclick=()=>{scale=b.dataset.s;document.querySelectorAll("#scale button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));main();});
+  kpis();draw();mortgage();checks();
+  let w=innerWidth;addEventListener("resize",()=>{if(innerWidth!==w){w=innerWidth;draw();}});
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change",draw);
+  new MutationObserver(draw).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+}
+init();
+</script>
